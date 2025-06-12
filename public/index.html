@@ -87,7 +87,6 @@
             </div>
         </div>
 
-
         <div class="bg-gray-700 p-4 rounded-lg shadow-md">
             <h2 class="text-xl font-semibold mb-3">Analysis Results</h2>
             <div v-if="analysisLoading" class="text-center text-indigo-400">
@@ -100,13 +99,11 @@
             </div>
             <div v-else-if="currentAnalysis" class="text-center">
                 <h3 class="text-2xl font-bold mb-2 text-green-400">Your Hand: {{ currentAnalysis.yourHandType }}</h3>
-                
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                     <div class="p-3 bg-gray-800 rounded-md">
                         <p class="text-lg text-green-300">Win Probability:</p>
                         <p class="text-3xl font-bold">{{ (currentAnalysis.winChance * 100).toFixed(2) }}%</p>
                     </div>
-
                     <div class="p-3 bg-gray-800 rounded-md">
                         <p class="text-lg text-red-300">Lose Probability:</p>
                         <p class="text-3xl font-bold">{{ (currentAnalysis.loseChance * 100).toFixed(2) }}%</p>
@@ -128,11 +125,9 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="module">
-        // The Vue.js script remains entirely unchanged.
         const { createApp, ref, computed, watch } = Vue;
         createApp({
             setup() {
-                const allCards = ref([]);
                 const playerHand = ref([]);
                 const communityCards = ref([]);
                 const numOpponents = ref(2);
@@ -144,7 +139,10 @@
                 const inputStatus = ref(null);
                 const inputMessage = ref('');
                 let analysisTimeoutId = null;
-                const socket = io('http://localhost:3000');
+
+                // --- MODIFIED: This now connects to the same server that serves the file ---
+                const socket = io();
+
                 socket.on('connect', () => { console.log('Connected to Socket.IO server'); });
                 socket.on('disconnect', () => { analysisError.value = 'Disconnected from server.'; });
                 socket.on('analysisResult', (data) => {
@@ -158,6 +156,7 @@
                     }
                 });
                 socket.on('connect_error', (error) => { analysisError.value = `Connection failed. Is the backend running?`; });
+                
                 const availableCards = computed(() => {
                     const selectedCardStrings = new Set([...playerHand.value.map(c => c.rank + c.suit), ...communityCards.value.map(c => c.rank + c.suit)]);
                     const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -166,11 +165,12 @@
                     RANKS.forEach(rank => SUITS.forEach(suit => deck.push({ rank, suit })));
                     return deck.filter(card => !selectedCardStrings.has(card.rank + card.suit));
                 });
-                const initializeDeck = () => {};
+
                 const isCardSelected = (card) => {
                     const cardString = card.rank + card.suit;
                     return playerHand.value.some(c => c.rank + c.suit === cardString) || communityCards.value.some(c => c.rank + c.suit === cardString);
                 };
+
                 const selectCard = (card) => {
                     if (playerHand.value.length < 2) {
                         if (!isCardSelected(card)) playerHand.value.push(card);
@@ -178,12 +178,15 @@
                         if (!isCardSelected(card)) communityCards.value.push(card);
                     }
                 };
+                
                 const removeCard = (cardToRemove, targetArrayName) => {
                     const targetArray = targetArrayName === 'playerHand' ? playerHand : communityCards;
                     targetArray.value = targetArray.value.filter(card => !(card.rank === cardToRemove.rank && card.suit === cardToRemove.suit));
                 };
+
                 const getSuitColor = (suit) => (suit === 'H' || suit === 'D') ? 'red-suit' : 'black-suit';
                 const getSuitSymbol = (suit) => ({'H':'♥','D':'♦','C':'♣','S':'♠'})[suit] || '';
+
                 const requestAnalysis = () => {
                     if (playerHand.value.length === 2) {
                         analysisLoading.value = true;
@@ -199,6 +202,7 @@
                         analysisLoading.value = false;
                     }
                 };
+
                 const parseAndAddCards = () => {
                     if (!textInput.value.trim()) return;
                     const cardStrings = textInput.value.trim().split(/[\s,]+/);
@@ -219,10 +223,12 @@
                     if (!errorFound) textInput.value = '';
                     setTimeout(() => { inputStatus.value = null; inputMessage.value = ''; }, 3000);
                 };
+                
                 watch([playerHand, communityCards, numOpponents, playerPosition], () => {
                     clearTimeout(analysisTimeoutId);
                     analysisTimeoutId = setTimeout(requestAnalysis, 300);
                 }, { deep: true });
+
                 const clearBoard = () => {
                     playerHand.value = [];
                     communityCards.value = [];
@@ -230,7 +236,7 @@
                     analysisError.value = null;
                     analysisLoading.value = false;
                 };
-                initializeDeck();
+                
                 return {
                     playerHand, communityCards, numOpponents, playerPosition, analysisLoading, analysisError,
                     currentAnalysis, availableCards, isCardSelected, selectCard, removeCard, getSuitColor, getSuitSymbol,
