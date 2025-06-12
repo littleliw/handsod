@@ -5,9 +5,13 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { getOpponentHandCategory, getRandomHandFromCategory } = require('./handRanges');
 
-
 const app = express();
 const server = http.createServer(app);
+
+// --- This line is the key ---
+// It tells Express to serve any files found in the 'public' folder.
+// When a request for "/" comes in, it finds and serves 'public/index.html' automatically.
+app.use(express.static('public'));
 
 app.use(cors({ origin: '*' }));
 const io = new Server(server, { cors: { origin: '*' } });
@@ -15,17 +19,16 @@ const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 
 // --- Poker Logic Utilities (Simplified) ---
-// (evaluateHand, getBest5CardHand, getHandScore functions remain the same)
+// (All your poker logic functions remain here...)
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const SUITS = ['H', 'D', 'C', 'S'];
 
 function evaluateHand(cards) {
-    if (cards.length < 5) return "Not enough cards for a full poker hand";
-    const relevantCards = cards;
+    if (cards.length < 5) return "Not enough cards";
     const counts = {};
     const suitCounts = {};
-    const rankValues = relevantCards.map(c => RANKS.indexOf(c.rank) + 2).sort((a, b) => a - b);
-    relevantCards.forEach(card => {
+    const rankValues = cards.map(c => RANKS.indexOf(c.rank) + 2).sort((a, b) => a - b);
+    cards.forEach(card => {
         counts[card.rank] = (counts[card.rank] || 0) + 1;
         suitCounts[card.suit] = (suitCounts[card.suit] || 0) + 1;
     });
@@ -60,10 +63,13 @@ function evaluateHand(cards) {
     const highestRank = RANKS[Math.max(...rankValues) - 2];
     return `High Card (${highestRank})`;
 }
+
 function getBest5CardHand(cards) {
     if (cards.length <= 5) return cards;
+    // This is a simplified placeholder
     return cards.slice(0, 5);
 }
+
 function getHandScore(fiveCardHand) {
     const handType = evaluateHand(fiveCardHand);
     switch (handType) {
@@ -79,10 +85,8 @@ function getHandScore(fiveCardHand) {
     }
 }
 
-
 function calculateEquity(playerHand, communityCards, numOpponents, playerPosition, numSimulations = 10000) {
     let wins = 0, ties = 0, losses = 0;
-    // ... (The entire simulation logic inside this function remains the same)
     const allKnownCards = [...playerHand, ...communityCards];
     const fullDeck = [];
     SUITS.forEach(suit => RANKS.forEach(rank => fullDeck.push({ rank, suit })));
@@ -150,28 +154,21 @@ function calculateEquity(playerHand, communityCards, numOpponents, playerPositio
             losses++;
         }
     }
-    // ... (Simulation logic ends here)
-
-
+    
     const total = wins + ties + losses;
-
-    // --- MODIFIED LOGIC: Redistribute ties and remove the tie field ---
     const winChance = total > 0 ? (wins + ties / 2) / total : 0;
     const loseChance = total > 0 ? (losses + ties / 2) / total : 0;
 
     return {
         winChance: winChance,
-        // tieChance field is now removed
         loseChance: loseChance,
         numSimulations: total,
         yourHandType: evaluateHand(playerHand.concat(communityCards)),
         message: `Analysis based on player position: ${playerPosition}. Opponent hand ranges adjusted accordingly.`
     };
-    // --- END OF MODIFIED LOGIC ---
 }
 
 
-// Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
@@ -213,10 +210,17 @@ io.on('connection', (socket) => {
     });
 });
 
+// --- THIS BLOCK IS THE CAUSE ---
+// By commenting it out, Express will fall back to serving index.html
+// from the 'public' folder for the root URL.
+/*
 app.get('/', (req, res) => {
     res.send('Poker Hand Analyzer Backend is running!');
 });
+*/
 
 server.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
 });
+```
+With this change, when you deploy your app and visit its main URL, the `app.use(express.static('public'))` line will find your `index.html` file and serve it correct
