@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Poker Hand Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { inter: ['Inter', 'sans-serif'], }, } } }
+    </script>
+    <style>
+        body { font-family: 'Inter', 'sans-serif'; background-color: #1a202c; color: #e2e8f0; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 2rem; box-sizing: border-box; }
+        #app { background-color: #2d3748; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3); width: 100%; max-width: 900px; }
+        #buy-me-a-coffee-widget { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+        .card-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 0.5rem; max-height: 200px; overflow-y: auto; padding: 0.5rem; border-radius: 0.5rem; background-color: #242c38; }
+        .card { width: 60px; height: 90px; background-color: #fff; color: #000; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 0.25rem; font-weight: bold; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); cursor: pointer; transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out; user-select: none; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+        .card.selected { border: 3px solid #667eea; box-shadow: 0 0 15px rgba(102, 126, 234, 0.7); transform: scale(1.05); }
+        .card .rank { font-size: 1.5rem; line-height: 1; }
+        .card .suit { font-size: 1rem; line-height: 1; }
+        .red-suit { color: #ef4444; }
+        .black-suit { color: #1a202c; }
+        @media (max-width: 640px) {
+            #app { padding: 1rem; border-radius: 0.75rem; }
+            .card { width: 50px; height: 75px; font-size: 0.9rem; }
+            .card .rank { font-size: 1.2rem; }
+            .card .suit { font-size: 0.8rem; }
+            .card-container { grid-template-columns: repeat(auto-fit, minmax(45px, 1fr)); }
+            #buy-me-a-coffee-widget { bottom: 15px; right: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="flex flex-col space-y-6">
+        <h1 class="text-3xl font-bold text-center mb-2 text-indigo-400">Real-Time Poker Hand Analyzer</h1>
+        <div class="text-center bg-yellow-900/50 text-yellow-300 text-sm p-2 rounded-md mb-6">
+            <strong>Note:</strong> This site is under development. Please use with caution.
+        </div>
+        
+        <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Your Hole Cards (2)</h2>
+            <div class="flex flex-wrap gap-3 mb-4 min-h-[90px] items-center justify-center border border-dashed border-gray-500 rounded-lg p-2">
+                <div v-for="(card, index) in playerHand" :key="index" class="card" @click="removeCard(card, 'playerHand')"><span class="rank" :class="getSuitColor(card.suit)">{{ card.rank }}</span><span class="suit" :class="getSuitColor(card.suit)">{{ getSuitSymbol(card.suit) }}</span></div>
+                <p v-if="playerHand.length === 0" class="text-gray-400">Select 2 cards for your hand</p>
+            </div>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Community Cards (Flop, Turn, River)</h2>
+            <div class="flex flex-wrap gap-3 mb-4 min-h-[90px] items-center justify-center border border-dashed border-gray-500 rounded-lg p-2">
+                <div v-for="(card, index) in communityCards" :key="index" class="card" @click="removeCard(card, 'communityCards')"><span class="rank" :class="getSuitColor(card.suit)">{{ card.rank }}</span><span class="suit" :class="getSuitColor(card.suit)">{{ getSuitSymbol(card.suit) }}</span></div>
+                <p v-if="communityCards.length === 0" class="text-gray-400">Select Flop (3), Turn (1), River (1) cards</p>
+            </div>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Input by Text (e.g., Ah, Ks, Tc)</h2>
+            <div class="flex items-center gap-3">
+                <input type="text" v-model="textInput" @keyup.enter="parseAndAddCards" placeholder="Enter cards separated by space/comma" class="flex-grow p-2 bg-gray-600 rounded-md border border-gray-500 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" :class="{'border-green-500': inputStatus === 'success', 'border-red-500': inputStatus === 'error'}">
+                <button @click="parseAndAddCards" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Add</button>
+            </div>
+            <p v-if="inputMessage" class="text-sm mt-2" :class="{'text-green-400': inputStatus === 'success', 'text-red-400': inputStatus === 'error'}">{{ inputMessage }}</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Available Cards to Click</h2>
+            <div class="card-container">
+                <div v-for="card in availableCards" :key="card.rank + card.suit" class="card transition-all duration-150 ease-in-out" :class="{ 'selected': isCardSelected(card) }" @click="selectCard(card)"><span class="rank" :class="getSuitColor(card.suit)">{{ card.rank }}</span><span class="suit" :class="getSuitColor(card.suit)">{{ getSuitSymbol(card.suit) }}</span></div>
+            </div>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg shadow-md grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label for="opponents" class="block text-lg font-semibold mb-2">Number of Opponents:</label>
+                <input type="range" id="opponents" v-model.number="numOpponents" min="1" max="9" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <span class="block text-center text-indigo-400 text-2xl font-bold">{{ numOpponents }}</span>
+            </div>
+            <div>
+                <label for="position" class="block text-lg font-semibold mb-2">Your Position:</label>
+                <select id="position" v-model="playerPosition" class="w-full p-2 bg-gray-600 rounded-md border border-gray-500 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="UTG">Under the Gun (UTG)</option>
+                    <option value="MP">Middle Position (MP)</option>
+                    <option value="CO">Cutoff (CO)</option>
+                    <option value="BTN">Button (BTN)</option>
+                    <option value="SB">Small Blind (SB)</option>
+                    <option value="BB">Big Blind (BB)</option>
+                </select>
+            </div>
+            <div class="md:col-span-2 flex justify-center mt-4">
+                <button @click="clearBoard" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75">Clear Board</button>
+            </div>
+        </div>
+
+
+        <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Analysis Results</h2>
+            <div v-if="analysisLoading" class="text-center text-indigo-400">
+                <p>Calculating odds... Please wait.</p>
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-400 mx-auto mt-4"></div>
+            </div>
+            <div v-else-if="analysisError" class="text-red-400 text-center">
+                <p>Error: {{ analysisError }}</p>
+                <p>Please check your inputs and ensure the backend server is running.</p>
+            </div>
+            <div v-else-if="currentAnalysis" class="text-center">
+                <h3 class="text-2xl font-bold mb-2 text-green-400">Your Hand: {{ currentAnalysis.yourHandType }}</h3>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div class="p-3 bg-gray-800 rounded-md">
+                        <p class="text-lg text-green-300">Win Probability:</p>
+                        <p class="text-3xl font-bold">{{ (currentAnalysis.winChance * 100).toFixed(2) }}%</p>
+                    </div>
+
+                    <div class="p-3 bg-gray-800 rounded-md">
+                        <p class="text-lg text-red-300">Lose Probability:</p>
+                        <p class="text-3xl font-bold">{{ (currentAnalysis.loseChance * 100).toFixed(2) }}%</p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-400 mt-4" v-if="currentAnalysis.numSimulations > 0">Analysis based on {{ currentAnalysis.numSimulations }} simulations.</p>
+                <p class="text-sm text-gray-400 mt-2" v-if="currentAnalysis.message">{{ currentAnalysis.message }}</p>
+            </div>
+            <div v-else class="text-gray-400 text-center">
+                <p v-if="playerHand.length < 2">Select 2 hole cards to begin analysis.</p>
+                <p v-else-if="playerHand.length === 2 && communityCards.length < 3">
+                    Your hand analysis is ready. Select at least 3 community cards (flop) for detailed equity analysis.
+                </p>
+                <p v-else>Input cards and other details to see real-time analysis.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="module">
+        // The Vue.js script remains entirely unchanged.
+        const { createApp, ref, computed, watch } = Vue;
+        createApp({
+            setup() {
+                const allCards = ref([]);
+                const playerHand = ref([]);
+                const communityCards = ref([]);
+                const numOpponents = ref(2);
+                const playerPosition = ref('BTN');
+                const analysisLoading = ref(false);
+                const analysisError = ref(null);
+                const currentAnalysis = ref(null);
+                const textInput = ref('');
+                const inputStatus = ref(null);
+                const inputMessage = ref('');
+                let analysisTimeoutId = null;
+                const socket = io('http://localhost:3000');
+                socket.on('connect', () => { console.log('Connected to Socket.IO server'); });
+                socket.on('disconnect', () => { analysisError.value = 'Disconnected from server.'; });
+                socket.on('analysisResult', (data) => {
+                    analysisLoading.value = false;
+                    if (data.error) {
+                        analysisError.value = data.error;
+                        currentAnalysis.value = null;
+                    } else {
+                        currentAnalysis.value = data;
+                        analysisError.value = null;
+                    }
+                });
+                socket.on('connect_error', (error) => { analysisError.value = `Connection failed. Is the backend running?`; });
+                const availableCards = computed(() => {
+                    const selectedCardStrings = new Set([...playerHand.value.map(c => c.rank + c.suit), ...communityCards.value.map(c => c.rank + c.suit)]);
+                    const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+                    const SUITS = ['H', 'D', 'C', 'S'];
+                    const deck = [];
+                    RANKS.forEach(rank => SUITS.forEach(suit => deck.push({ rank, suit })));
+                    return deck.filter(card => !selectedCardStrings.has(card.rank + card.suit));
+                });
+                const initializeDeck = () => {};
+                const isCardSelected = (card) => {
+                    const cardString = card.rank + card.suit;
+                    return playerHand.value.some(c => c.rank + c.suit === cardString) || communityCards.value.some(c => c.rank + c.suit === cardString);
+                };
+                const selectCard = (card) => {
+                    if (playerHand.value.length < 2) {
+                        if (!isCardSelected(card)) playerHand.value.push(card);
+                    } else if (communityCards.value.length < 5) {
+                        if (!isCardSelected(card)) communityCards.value.push(card);
+                    }
+                };
+                const removeCard = (cardToRemove, targetArrayName) => {
+                    const targetArray = targetArrayName === 'playerHand' ? playerHand : communityCards;
+                    targetArray.value = targetArray.value.filter(card => !(card.rank === cardToRemove.rank && card.suit === cardToRemove.suit));
+                };
+                const getSuitColor = (suit) => (suit === 'H' || suit === 'D') ? 'red-suit' : 'black-suit';
+                const getSuitSymbol = (suit) => ({'H':'♥','D':'♦','C':'♣','S':'♠'})[suit] || '';
+                const requestAnalysis = () => {
+                    if (playerHand.value.length === 2) {
+                        analysisLoading.value = true;
+                        analysisError.value = null;
+                        currentAnalysis.value = null;
+                        socket.emit('requestAnalysis', {
+                            playerHand: playerHand.value,
+                            communityCards: communityCards.value,
+                            numOpponents: numOpponents.value,
+                            playerPosition: playerPosition.value,
+                        });
+                    } else {
+                        analysisLoading.value = false;
+                    }
+                };
+                const parseAndAddCards = () => {
+                    if (!textInput.value.trim()) return;
+                    const cardStrings = textInput.value.trim().split(/[\s,]+/);
+                    let addedCount = 0, errorFound = false;
+                    const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+                    const SUITS = ['H', 'D', 'C', 'S'];
+                    for (const str of cardStrings) {
+                        if (str.length < 2) { errorFound = true; break; }
+                        const rank = str.slice(0, -1).toUpperCase();
+                        const suit = str.slice(-1).toUpperCase();
+                        if (RANKS.includes(rank) && SUITS.includes(suit)) {
+                            const card = { rank, suit };
+                            if (!isCardSelected(card)) { selectCard(card); addedCount++; }
+                        } else { errorFound = true; break; }
+                    }
+                    inputStatus.value = errorFound ? 'error' : 'success';
+                    inputMessage.value = errorFound ? 'Invalid card format detected.' : `Successfully added ${addedCount} card(s).`;
+                    if (!errorFound) textInput.value = '';
+                    setTimeout(() => { inputStatus.value = null; inputMessage.value = ''; }, 3000);
+                };
+                watch([playerHand, communityCards, numOpponents, playerPosition], () => {
+                    clearTimeout(analysisTimeoutId);
+                    analysisTimeoutId = setTimeout(requestAnalysis, 300);
+                }, { deep: true });
+                const clearBoard = () => {
+                    playerHand.value = [];
+                    communityCards.value = [];
+                    currentAnalysis.value = null;
+                    analysisError.value = null;
+                    analysisLoading.value = false;
+                };
+                initializeDeck();
+                return {
+                    playerHand, communityCards, numOpponents, playerPosition, analysisLoading, analysisError,
+                    currentAnalysis, availableCards, isCardSelected, selectCard, removeCard, getSuitColor, getSuitSymbol,
+                    clearBoard, textInput, inputStatus, inputMessage, parseAndAddCards,
+                };
+            }
+        }).mount('#app');
+    </script>
+    
+    <div id="buy-me-a-coffee-widget">
+        <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="aiko_hikari" data-color="#40DCA5" data-emoji=""  data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00" ></script>
+    </div>
+
+</body>
+</html>
